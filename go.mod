@@ -20,6 +20,7 @@ require (
 	github.com/posener/complete v1.2.2 // indirect
 	github.com/ulikunitz/xz v0.5.6 // indirect
 	golang.org/x/tools v0.0.0-20200513154647-78b527d18275 // indirect
+	gopkg.in/yaml.v2 v2.2.8
 	k8s.io/api v0.18.2
 	k8s.io/apimachinery v0.18.2
 	k8s.io/client-go v0.18.2

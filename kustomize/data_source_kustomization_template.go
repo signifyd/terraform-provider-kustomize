@@ -8,11 +8,12 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/otiai10/copy"
+	"gopkg.in/yaml.v2"
 )
 
 var basesTemplate = `
 bases:
-  - ./bases
+  - %s
 `
 
 var resourcesTemplate = `
@@ -33,30 +34,36 @@ func dataSourceKustomizationTemplate() *schema.Resource {
 			"bases_path": &schema.Schema{
 				Type:     schema.TypeString,
 				Required: true,
+				Description: "Kustomization bases path.  Either a local directory, git or http",
 			},
 			"kustomization": &schema.Schema{
 				Type:     schema.TypeString,
 				Optional: true,
+				Description: "Additional elements to add to the kustomization.yaml file.  Must be in yaml format.",
 			},
 			"patches": &schema.Schema{
 				Type:     schema.TypeList,
 				Optional: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
+				Description: "Added to the kustomization.yaml file as `patchesStrategicMerge`.   Must be in yaml format.",
 			},
 			"resources": &schema.Schema{
 				Type:     schema.TypeList,
 				Optional: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
+				Description: "Added to the kustomization.yaml file as `resources`.   Must be in yaml format.",
 			},
 			"ids": &schema.Schema{
 				Type:     schema.TypeSet,
 				Computed: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
+				Description: "IDs of each resource manifest returned.",
 			},
 			"manifests": &schema.Schema{
 				Type:     schema.TypeMap,
 				Computed: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
+				Description: "Resource manifests returned.",
 			},
 		},
 	}
@@ -64,44 +71,43 @@ func dataSourceKustomizationTemplate() *schema.Resource {
 
 func kustomizationTemplateBuild(d *schema.ResourceData, m interface{}) error {
 	basesPath := d.Get("bases_path").(string)
-	kustomization := d.Get("kustomization").(string)
-	patches := GetStringList(d, "patches")
-	resources := GetStringList(d,"resources")
+	kustomization, err := validateYamlString(d.Get("kustomization").(string)); if err != nil {
+		return err
+	}
+	patches, err := validateYamlStringList(GetStringList(d, "patches")); if err != nil {
+		return err
+	}
+	resources, err := validateYamlStringList(GetStringList(d,"resources")); if err != nil {
+		return err
+	}
+
 	tempDir, err := ioutil.TempDir("", "kustomizationTemplateBuild")
 	if err != nil {
 		return fmt.Errorf("kustomizationTemplateBuild: %s", err)
 	}
-	err = kustomizationTemplateMerge(tempDir, basesPath, kustomization, patches, resources)
+	relBasesPath, err := getRelativeBasesPath(basesPath, tempDir)
+	if err != nil {
+		return fmt.Errorf("kustomizationTemplateBuild: %s", err)
+	}
+	err = kustomizationTemplateMerge(tempDir, relBasesPath, kustomization, patches, resources)
 	if err != nil {
 		return fmt.Errorf("kustomizationTemplateBuild: %s", err)
 	}
 
-	rm, err := runKustomizeBuild(tempDir)
+	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("kustomizationTemplateBuild: %s", err)
 	}
+	_ = os.Chdir(tempDir)
+	err = setResourcesFromKustomize(d, tempDir)
+	_ = os.Chdir(cwd)
 
-	_ = d.Set("ids", flattenKustomizationIDs(rm))
-
-	outResources, err := flattenKustomizationResources(rm)
-	if err != nil {
-		return fmt.Errorf("kustomizationTemplateBuild: %s", err)
-	}
-	_ = d.Set("manifests", outResources)
-
-	id, err := getIDFromResources(rm)
-	if err != nil {
-		return fmt.Errorf("kustomizationTemplateBuild: %s", err)
-	}
-	d.SetId(id)
-	_ = os.RemoveAll(tempDir)
-
-	return nil
+	return  err
 }
 
-func kustomizationTemplateMerge(tempPath string, basesPath string, kustomization string, patches []string, resources []string) error {
-	copy.Copy(basesPath, filepath.Join(tempPath, "bases"))
-	err := writeKustomization(filepath.Join(tempPath, "kustomization.yaml"), kustomization, len(patches) > 0, len(resources) > 0)
+func kustomizationTemplateMerge(tempPath string, relBasesPath string, kustomization string, patches []string, resources []string) error {
+	err := writeKustomization(filepath.Join(tempPath, "kustomization.yaml"), kustomization, relBasesPath,
+		len(patches) > 0, len(resources) > 0)
 	if err != nil {
 		return fmt.Errorf("kustomizationTemplateMerge: %s", err)
 	}
@@ -117,12 +123,23 @@ func kustomizationTemplateMerge(tempPath string, basesPath string, kustomization
 	return nil
 }
 
-func writeKustomization(filePath string, kustomization string, hasPatches bool, hasResources bool) error {
+func getRelativeBasesPath(basesPath string, tempDir string) (string, error) {
+	if _, err := os.Stat(basesPath); os.IsNotExist(err) {
+		// Assume this is a git path
+		return basesPath, nil
+	}
+	err := copy.Copy(basesPath, filepath.Join(tempDir, "bases")); if err != nil {
+		return "", err
+	}
+	return "bases", nil
+}
+
+func writeKustomization(filePath string, kustomization string, basesPath string, hasPatches bool, hasResources bool) error {
 	f, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("writeKustomization: %s", err)
 	}
-	_, err = f.WriteString(basesTemplate)
+	_, err = f.WriteString(fmt.Sprintf(basesTemplate, basesPath))
 	if err != nil {
 		return fmt.Errorf("writeKustomization: %s", err)
 	}
@@ -182,4 +199,32 @@ func GetStringList(d *schema.ResourceData, key string) []string {
 		items[i] = raw.(string)
 	}
 	return items
+}
+
+func validateYamlStringList(yamlList []string) ([]string, error) {
+	items := make([]string, len(yamlList))
+	for i, yamlStr := range yamlList {
+		yamlNormalized, err := validateYamlString(yamlStr); if err != nil {
+			return []string{}, err
+		}
+		items[i] = yamlNormalized
+	}
+	return items, nil
+}
+
+func validateYamlString(yamlStr string) (string, error) {
+	if yamlStr == "" {
+		return "", nil
+	}
+
+	t := make(map[string]interface{})
+
+	err := yaml.Unmarshal([]byte(yamlStr), &t); if err != nil {
+		return "", fmt.Errorf("Invalid yaml:\n%s\n%s", yamlStr, err)
+	}
+	yamlBytes, err := yaml.Marshal(&t); if err != nil {
+		return  "", err
+	}
+	yamlNormalized := string(yamlBytes)
+	return yamlNormalized, nil
 }

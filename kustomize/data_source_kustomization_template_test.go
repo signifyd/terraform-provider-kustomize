@@ -51,7 +51,7 @@ func TestAccDataSourceKustomizationTemplate_basic(t *testing.T) {
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("data.kustomization_template.test", "id"),
 					resource.TestCheckResourceAttrSet("data.kustomization_template.test", "bases_path"),
-					resource.TestCheckResourceAttr("data.kustomization_template.test", "bases_path", "../test_kustomizations/basic/initial"),
+					resource.TestCheckResourceAttr("data.kustomization_template.test", "bases_path", "../test_kustomizations/template"),
 					resource.TestCheckResourceAttr("data.kustomization_template.test", "ids.#", "5"),
 					resource.TestCheckResourceAttr("data.kustomization_template.test", "manifests.%", "5"),
 				),

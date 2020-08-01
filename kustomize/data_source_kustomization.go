@@ -68,8 +68,7 @@ func runKustomizeBuild(path string) (rm resmap.ResMap, err error) {
 	return rm, nil
 }
 
-func kustomizationBuild(d *schema.ResourceData, m interface{}) error {
-	path := d.Get("path").(string)
+func setResourcesFromKustomize(d *schema.ResourceData, path string) error {
 	rm, err := runKustomizeBuild(path)
 	if err != nil {
 		return fmt.Errorf("kustomizationBuild: %s", err)
@@ -90,4 +89,9 @@ func kustomizationBuild(d *schema.ResourceData, m interface{}) error {
 	d.SetId(id)
 
 	return nil
+}
+
+func kustomizationBuild(d *schema.ResourceData, m interface{}) error {
+	path := d.Get("path").(string)
+	return  setResourcesFromKustomize(d, path)
 }
