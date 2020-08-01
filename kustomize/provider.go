@@ -36,6 +36,7 @@ func Provider() *schema.Provider {
 
 		DataSourcesMap: map[string]*schema.Resource{
 			"kustomization": dataSourceKustomization(),
+			"kustomization_template": dataSourceKustomizationTemplate(),
 		},
 
 		Schema: map[string]*schema.Schema{
