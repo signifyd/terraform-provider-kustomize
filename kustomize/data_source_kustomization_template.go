@@ -31,38 +31,38 @@ func dataSourceKustomizationTemplate() *schema.Resource {
 		Read: kustomizationTemplateBuild,
 
 		Schema: map[string]*schema.Schema{
-			"bases_path": &schema.Schema{
-				Type:     schema.TypeString,
-				Required: true,
+			"bases_path": {
+				Type:        schema.TypeString,
+				Required:    true,
 				Description: "Kustomization bases path.  Either a local directory, git or http",
 			},
-			"kustomization": &schema.Schema{
-				Type:     schema.TypeString,
-				Optional: true,
+			"kustomization": {
+				Type:        schema.TypeString,
+				Optional:    true,
 				Description: "Additional elements to add to the kustomization.yaml file.  Must be in yaml format.",
 			},
-			"patches": &schema.Schema{
-				Type:     schema.TypeList,
-				Optional: true,
-				Elem:     &schema.Schema{Type: schema.TypeString},
+			"patches": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "Added to the kustomization.yaml file as `patchesStrategicMerge`.   Must be in yaml format.",
 			},
-			"resources": &schema.Schema{
-				Type:     schema.TypeList,
-				Optional: true,
-				Elem:     &schema.Schema{Type: schema.TypeString},
+			"resources": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "Added to the kustomization.yaml file as `resources`.   Must be in yaml format.",
 			},
-			"ids": &schema.Schema{
-				Type:     schema.TypeSet,
-				Computed: true,
-				Elem:     &schema.Schema{Type: schema.TypeString},
+			"ids": {
+				Type:        schema.TypeSet,
+				Computed:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "IDs of each resource manifest returned.",
 			},
-			"manifests": &schema.Schema{
-				Type:     schema.TypeMap,
-				Computed: true,
-				Elem:     &schema.Schema{Type: schema.TypeString},
+			"manifests": {
+				Type:        schema.TypeMap,
+				Computed:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
 				Description: "Resource manifests returned.",
 			},
 		},
@@ -71,13 +71,16 @@ func dataSourceKustomizationTemplate() *schema.Resource {
 
 func kustomizationTemplateBuild(d *schema.ResourceData, m interface{}) error {
 	basesPath := d.Get("bases_path").(string)
-	kustomization, err := validateYamlString(d.Get("kustomization").(string)); if err != nil {
+	kustomization, err := validateYamlString(d.Get("kustomization").(string))
+	if err != nil {
 		return err
 	}
-	patches, err := validateYamlStringList(GetStringList(d, "patches")); if err != nil {
+	patches, err := validateYamlStringList(GetStringList(d, "patches"))
+	if err != nil {
 		return err
 	}
-	resources, err := validateYamlStringList(GetStringList(d,"resources")); if err != nil {
+	resources, err := validateYamlStringList(GetStringList(d, "resources"))
+	if err != nil {
 		return err
 	}
 
@@ -85,6 +88,8 @@ func kustomizationTemplateBuild(d *schema.ResourceData, m interface{}) error {
 	if err != nil {
 		return fmt.Errorf("kustomizationTemplateBuild: %s", err)
 	}
+	defer os.RemoveAll(tempDir)
+
 	relBasesPath, err := getRelativeBasesPath(basesPath, tempDir)
 	if err != nil {
 		return fmt.Errorf("kustomizationTemplateBuild: %s", err)
@@ -99,10 +104,10 @@ func kustomizationTemplateBuild(d *schema.ResourceData, m interface{}) error {
 		return fmt.Errorf("kustomizationTemplateBuild: %s", err)
 	}
 	_ = os.Chdir(tempDir)
+	defer os.Chdir(cwd)
 	err = setResourcesFromKustomize(d, tempDir)
-	_ = os.Chdir(cwd)
 
-	return  err
+	return err
 }
 
 func kustomizationTemplateMerge(tempPath string, relBasesPath string, kustomization string, patches []string, resources []string) error {
@@ -128,7 +133,8 @@ func getRelativeBasesPath(basesPath string, tempDir string) (string, error) {
 		// Assume this is a git path
 		return basesPath, nil
 	}
-	err := copy.Copy(basesPath, filepath.Join(tempDir, "bases")); if err != nil {
+	err := copy.Copy(basesPath, filepath.Join(tempDir, "bases"))
+	if err != nil {
 		return "", err
 	}
 	return "bases", nil
@@ -139,6 +145,8 @@ func writeKustomization(filePath string, kustomization string, basesPath string,
 	if err != nil {
 		return fmt.Errorf("writeKustomization: %s", err)
 	}
+	defer f.Close()
+
 	_, err = f.WriteString(fmt.Sprintf(basesTemplate, basesPath))
 	if err != nil {
 		return fmt.Errorf("writeKustomization: %s", err)
@@ -159,10 +167,6 @@ func writeKustomization(filePath string, kustomization string, basesPath string,
 	if err != nil {
 		return fmt.Errorf("writeKustomization: %s", err)
 	}
-	err = f.Close()
-	if err != nil {
-		return fmt.Errorf("writeKustomization: %s", err)
-	}
 	return nil
 }
 
@@ -171,23 +175,21 @@ func writeYamlArray(filePath string, arg []string) error {
 	if err != nil {
 		return fmt.Errorf("writeYamlArray: %s", err)
 	}
+	defer f.Close()
+
 	for _, spec := range arg {
 		_, err = f.WriteString("---\n")
 		if err != nil {
-			return fmt.Errorf("writeYamlArray: %s", err)
+			return err
 		}
 		_, err = f.WriteString(spec)
 		if err != nil {
-			return fmt.Errorf("writeYamlArray: %s", err)
+			return err
 		}
 		_, err = f.WriteString("\n")
 		if err != nil {
-			return fmt.Errorf("writeYamlArray: %s", err)
+			return err
 		}
-	}
-	err = f.Close()
-	if err != nil {
-		return fmt.Errorf("writeYamlArray: %s", err)
 	}
 	return nil
 }
@@ -204,7 +206,8 @@ func GetStringList(d *schema.ResourceData, key string) []string {
 func validateYamlStringList(yamlList []string) ([]string, error) {
 	items := make([]string, len(yamlList))
 	for i, yamlStr := range yamlList {
-		yamlNormalized, err := validateYamlString(yamlStr); if err != nil {
+		yamlNormalized, err := validateYamlString(yamlStr)
+		if err != nil {
 			return []string{}, err
 		}
 		items[i] = yamlNormalized
@@ -219,11 +222,13 @@ func validateYamlString(yamlStr string) (string, error) {
 
 	t := make(map[string]interface{})
 
-	err := yaml.Unmarshal([]byte(yamlStr), &t); if err != nil {
+	err := yaml.Unmarshal([]byte(yamlStr), &t)
+	if err != nil {
 		return "", fmt.Errorf("Invalid yaml:\n%s\n%s", yamlStr, err)
 	}
-	yamlBytes, err := yaml.Marshal(&t); if err != nil {
-		return  "", err
+	yamlBytes, err := yaml.Marshal(&t)
+	if err != nil {
+		return "", err
 	}
 	yamlNormalized := string(yamlBytes)
 	return yamlNormalized, nil
