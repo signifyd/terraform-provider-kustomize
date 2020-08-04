@@ -2,6 +2,7 @@ package kustomize
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"gopkg.in/yaml.v2"
@@ -16,15 +17,19 @@ var _ filesys.FileSystem = FsOverlay{}
 type FsOverlay struct {
 	base filesys.FileSystem
 	overlay filesys.FileSystem
+	rootDir string
 }
 
 // MakefsOverlay makes an instance of FsOverlay.
-func MakefsOverlay() FsOverlay {
-
-	return FsOverlay{
-		overlay: filesys.MakeEmptyDirInMemory(),
-		base: filesys.MakeFsOnDisk(),
+func MakefsOverlay() (FsOverlay, error) {
+	curDir, err := os.Getwd(); if err != nil {
+		return FsOverlay{}, err
 	}
+	return FsOverlay{
+		overlay: filesys.MakeFsInMemory(),
+		base: filesys.MakeFsOnDisk(),
+		rootDir: curDir,
+	}, nil
 }
 
 // Create delegates to os.Create.
@@ -152,7 +157,11 @@ func (fs FsOverlay) AddOverlayFiles(prefix string, specOrNames []interface{}) ([
 }
 
 func (fs FsOverlay) AddOverlayFile(name string, data []byte) error {
-	return fs.overlay.WriteFile(name, data)
+	fullPath := filepath.Join(fs.rootDir, name)
+	dir := filepath.Dir(fullPath); if dir != "." {
+		_ = fs.overlay.MkdirAll(dir)
+	}
+	return fs.overlay.WriteFile(fullPath, data)
 }
 
 func toYaml(data map[interface{}]interface{}) ([]byte, error) {

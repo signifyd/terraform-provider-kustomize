@@ -6,7 +6,6 @@ import (
 )
 
 var fileArrayFields = [...]string {
-	"bases",
 	"configurations",
 	"patchesStrategicMerge",
 	"resources",
@@ -36,7 +35,9 @@ func dataSourceKustomizationTemplate() *schema.Resource {
 }
 
 func kustomizationTemplateBuild(d *schema.ResourceData, m interface{}) error {
-	overlay := MakefsOverlay()
+	overlay, err := MakefsOverlay(); if err != nil {
+		return err
+	}
 	kustomization, err := fromYaml(d.Get("kustomization").(string)); if err != nil {
 		return  err
 	}
@@ -56,7 +57,7 @@ func kustomizationTemplateBuild(d *schema.ResourceData, m interface{}) error {
 	err = overlay.AddOverlayFile("kustomization.yaml", kustomizationYaml); if err != nil {
 		return err
 	}
-	err = setResourcesFromKustomizeUsingFs(d, overlay, ".")
+	err = setResourcesFromKustomizeUsingFs(d, overlay, overlay.rootDir)
 
 	return err
 }
@@ -74,7 +75,7 @@ func addFileListToKustomize(overlay FsOverlay, kustomization map[interface{}]int
 		return nil
 	}
 
-	names, err := overlay.AddOverlayFiles(fmt.Sprintf("%s_", key), specs); if err != nil {
+	names, err := overlay.AddOverlayFiles(key, specs); if err != nil {
 		return err
 	}
 
@@ -105,7 +106,7 @@ func addPatchesjson6902ToKustomize(overlay FsOverlay, kustomization map[interfac
 		}
 	}
 
-	names, err := overlay.AddOverlayFiles(fmt.Sprintf("%s_", key), paths); if err != nil {
+	names, err := overlay.AddOverlayFiles(key, paths); if err != nil {
 		return err
 	}
 	for ix, patch := range specs {

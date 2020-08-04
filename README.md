@@ -30,11 +30,10 @@ is a list, e.g. `bases` real file paths and yaml can be intermixed
 Using `yamlencode` makes it easier to define `kustomization` as an hcl map.
 
 Supported fields for file substitution are:
-1. bases
-2. configurations
-3. patchesStrategicMerge
-4. resources
-5. patchesJson6902
+* configurations
+* patchesJson6902
+* patchesStrategicMerge
+* resources
 
 ```hcl
 
