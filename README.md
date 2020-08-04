@@ -19,6 +19,68 @@ As such it can be useful both to replace kustomize/kubectl integrated into a Ter
 -	[Terraform](https://www.terraform.io/downloads.html) 0.12.x
 -	[Go](https://golang.org/doc/install) 1.13 (to build the provider plugin)
 
+## Using the template form
+This approach uses hcl to build the kustomization.yaml file.  
+See https://kubectl.docs.kubernetes.io/pages/reference/kustomize.html for reference.
+
+Wherever the reference specifies that a file path is used the template allows a map
+or a yaml string instead and creates an in memory file with the yaml content.  Where the field
+is a list, e.g. `bases` real file paths and yaml can be intermixed
+
+Using `yamlencode` makes it easier to define `kustomization` as an hcl map.
+
+Supported fields for file substitution are:
+1. bases
+2. configurations
+3. patchesStrategicMerge
+4. resources
+5. patchesJson6902
+
+```hcl
+
+data "kustomization_template" "test" {
+    #yamlencode is used to convert the map to a yaml string 
+	kustomization = yamlencode({
+		bases = ["../test_kustomizations/template"]
+		resources = ["./overlays/some_resource.yaml", <<-EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: test2
+  name: test2
+  namespace: test-basic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test2
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: test2
+    spec:
+      containers:
+      - image: nginx
+        name: nginx
+        resources: {}
+status: {}
+EOF
+]
+	})
+}
+
+resource "kustomization_resource" "example" {
+  for_each = data.kustomization.example.ids
+
+  manifest = data.kustomization.example.manifests[each.value]
+}
+
+```
+
 ## Usage
 
 ```hcl
