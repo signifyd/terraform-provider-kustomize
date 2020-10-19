@@ -50,8 +50,7 @@ func dataSourceKustomization() *schema.Resource {
 	}
 }
 
-func runKustomizeBuild(path string) (rm resmap.ResMap, err error) {
-	fSys := filesys.MakeFsOnDisk()
+func runKustomizeBuildWithFileSys(fSys filesys.FileSystem, path string) (rm resmap.ResMap, err error) {
 	opts := &krusty.Options{
 		DoLegacyResourceSort: true,
 		LoadRestrictions:     types.LoadRestrictionsRootOnly,
@@ -68,9 +67,13 @@ func runKustomizeBuild(path string) (rm resmap.ResMap, err error) {
 	return rm, nil
 }
 
-func kustomizationBuild(d *schema.ResourceData, m interface{}) error {
-	path := d.Get("path").(string)
-	rm, err := runKustomizeBuild(path)
+func setResourcesFromKustomize(d *schema.ResourceData, path string) error {
+	fSys := filesys.MakeFsOnDisk()
+	return setResourcesFromKustomizeUsingFs(d, fSys, path)
+}
+
+func setResourcesFromKustomizeUsingFs(d *schema.ResourceData, fSys filesys.FileSystem, path string) error {
+	rm, err := runKustomizeBuildWithFileSys(fSys, path)
 	if err != nil {
 		return fmt.Errorf("kustomizationBuild: %s", err)
 	}
@@ -90,4 +93,9 @@ func kustomizationBuild(d *schema.ResourceData, m interface{}) error {
 	d.SetId(id)
 
 	return nil
+}
+
+func kustomizationBuild(d *schema.ResourceData, m interface{}) error {
+	path := d.Get("path").(string)
+	return  setResourcesFromKustomize(d, path)
 }
