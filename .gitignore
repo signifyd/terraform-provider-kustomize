@@ -3,3 +3,4 @@ terraform.d
 *.tfstate*
 crash.log
 .idea
+dist/

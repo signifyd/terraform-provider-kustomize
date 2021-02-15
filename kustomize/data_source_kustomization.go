@@ -4,13 +4,17 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
+	"hash/crc32"
+	"log"
+	"strconv"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 
 	"sigs.k8s.io/kustomize/api/filesys"
 	"sigs.k8s.io/kustomize/api/krusty"
+	"sigs.k8s.io/kustomize/api/resid"
 	"sigs.k8s.io/kustomize/api/resmap"
-	"sigs.k8s.io/kustomize/api/types"
 )
 
 func getIDFromResources(rm resmap.ResMap) (s string, err error) {
@@ -40,6 +44,7 @@ func dataSourceKustomization() *schema.Resource {
 				Type:     schema.TypeSet,
 				Computed: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
+				Set:      idSetHash,
 			},
 			"manifests": &schema.Schema{
 				Type:     schema.TypeMap,
@@ -50,12 +55,59 @@ func dataSourceKustomization() *schema.Resource {
 	}
 }
 
-func runKustomizeBuildWithFileSys(fSys filesys.FileSystem, path string) (rm resmap.ResMap, err error) {
-	opts := &krusty.Options{
-		DoLegacyResourceSort: true,
-		LoadRestrictions:     types.LoadRestrictionsRootOnly,
-		DoPrune:              false,
+func determinePrefix(id string) (p uint32) {
+	gvk := resid.GvkFromString(id)
+
+	// Default prefix to 5
+	p = 5
+
+	for _, k := range []string{
+		"Namespace",
+		"CustomResourceDefinition",
+	} {
+		if strings.HasPrefix(gvk.Kind, k) {
+			p = 1
+		}
 	}
+
+	for _, k := range []string{
+		"MutatingWebhookConfiguration",
+		"ValidatingWebhookConfiguration",
+	} {
+		if strings.HasPrefix(gvk.Kind, k) {
+			p = 9
+		}
+	}
+
+	return p
+}
+
+func prefixHash(p uint32, h uint32) int {
+	s := fmt.Sprintf("%01d%010d", p, h)
+	s = s[0:9]
+
+	i, e := strconv.ParseInt(s, 10, 32)
+	if e != nil {
+		// return unmodified hash
+		log.Printf("idSetHash: %s", e)
+		return int(h)
+	}
+
+	return int(i)
+}
+
+func idSetHash(v interface{}) int {
+	id := v.(string)
+
+	p := determinePrefix(id)
+	h := crc32.ChecksumIEEE([]byte(id))
+
+	return prefixHash(p, h)
+}
+
+func runKustomizeBuildWithFileSys(fSys filesys.FileSystem, path string) (rm resmap.ResMap, err error) {
+	opts := krusty.MakeDefaultOptions()
+	opts.DoLegacyResourceSort = true
 
 	k := krusty.MakeKustomizer(fSys, opts)
 
