@@ -8,6 +8,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 
@@ -105,7 +106,12 @@ func idSetHash(v interface{}) int {
 	return prefixHash(p, h)
 }
 
+var _mutex = &sync.Mutex{}
+
 func runKustomizeBuildWithFileSys(fSys filesys.FileSystem, path string) (rm resmap.ResMap, err error) {
+	_mutex.Lock()
+	defer _mutex.Unlock()
+
 	opts := krusty.MakeDefaultOptions()
 	opts.DoLegacyResourceSort = true
 
